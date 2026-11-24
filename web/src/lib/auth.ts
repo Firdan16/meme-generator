@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, unwrap } from "@/lib/api";
-import type { ApiEnvelope } from "@/lib/types";
+import { api, logoutSession, unwrap } from "@/lib/api";
 
 export interface AuthUser {
   id: string;
@@ -21,19 +20,19 @@ interface AuthInput {
 export function useMe() {
   return useQuery({
     queryKey: ["me"],
-    queryFn: async () => unwrap<AuthUser>(await api.get("/api/v1/auth/me")),
+    queryFn: async ({ signal }) => unwrap<AuthUser>(await api.get("/api/v1/auth/me", { signal })),
     retry: false,
   });
 }
 
 export function useRegister() {
+  const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: AuthInput) => {
-      const res = await api.post<ApiEnvelope<AuthResponse>>(
-        "/api/v1/auth/register",
-        { name: input.name, email: input.email, password: input.password },
-      );
-      return res.data;
+    mutationFn: async (input: AuthInput) =>
+      unwrap<AuthResponse>(await api.post("/api/v1/auth/register", input)),
+    onSuccess: async ({ user }) => {
+      await qc.cancelQueries({ queryKey: ["me"] });
+      qc.setQueryData(["me"], user);
     },
   });
 }
@@ -41,21 +40,19 @@ export function useRegister() {
 export function useLogin() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: Omit<AuthInput, "name">) => {
-      const res = await api.post<ApiEnvelope<AuthResponse>>(
-        "/api/v1/auth/login",
-        input,
-      );
-      return res.data;
+    mutationFn: async (input: Omit<AuthInput, "name">) =>
+      unwrap<AuthResponse>(await api.post("/api/v1/auth/login", input)),
+    onSuccess: async ({ user }) => {
+      await qc.cancelQueries({ queryKey: ["me"] });
+      qc.setQueryData(["me"], user);
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["me"] }),
   });
 }
 
 export function useLogout() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async () => api.post("/api/v1/auth/logout"),
+    mutationFn: logoutSession,
     onSuccess: () => {
       qc.clear();
       window.location.href = "/";

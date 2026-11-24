@@ -1,4 +1,4 @@
-import axios from "axios";
+import axios, { type InternalAxiosRequestConfig } from "axios";
 
 export const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080",
@@ -6,19 +6,30 @@ export const api = axios.create({
   headers: { "Content-Type": "application/json" },
 });
 
+const refreshPath = "/api/v1/auth/refresh";
+const logoutPath = "/api/v1/auth/logout";
+const publicAuthPaths = new Set([refreshPath, "/api/v1/auth/login", "/api/v1/auth/register"]);
+let refreshRequest: Promise<unknown> | undefined;
+let loggingOut = false;
+
 api.interceptors.response.use(
   (res) => res,
   async (error) => {
-    const original = error.config;
-    // Access token kedaluwarsa → coba refresh sekali lewat proxy rewrite.
+    const original = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined;
     if (
       error.response?.status === 401 &&
+      original &&
       !original._retried &&
-      !original.url?.includes("/auth/refresh")
+      !original.signal?.aborted &&
+      !publicAuthPaths.has(original.url ?? "") &&
+      (!loggingOut || original.url === logoutPath)
     ) {
       original._retried = true;
+      refreshRequest ??= api.post(refreshPath).finally(() => {
+        refreshRequest = undefined;
+      });
       try {
-        await api.post("/api/v1/auth/refresh");
+        await refreshRequest;
         return api(original);
       } catch {
         // refresh gagal → biarkan error 401 asli naik.
@@ -27,6 +38,16 @@ api.interceptors.response.use(
     return Promise.reject(error);
   },
 );
+
+export async function logoutSession() {
+  loggingOut = true;
+  try {
+    await refreshRequest?.catch(() => undefined);
+    await api.post(logoutPath);
+  } finally {
+    loggingOut = false;
+  }
+}
 
 // Ambil field `data` dari envelope backend; lempar error bila kosong
 // supaya mutasi/query memasuki state error, bukan mengembalikan undefined.

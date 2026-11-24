@@ -15,3 +15,11 @@
 **Perbaikan.** Respons status selalu mengirim `Cache-Control: private, no-store`, termasuk saat autentikasi gagal. Daftar paket publik tetap tersedia. Saat merilis patch ke deployment yang memakai cache bersama, hapus entri status yang pernah tersimpan di cache tersebut.
 
 **Bukti.** `TestSubscriptionStatusIsNotCacheable` memeriksa header pada respons akun uji. Sebelum patch, header membolehkan cache publik. Setelah patch, respons akun uji mengembalikan 200 dengan `private, no-store`; guest mendapat 401 dengan header yang sama.
+
+## TKT-103 · Logout dan pengalihan halaman login
+
+**Akar masalah.** Login memasang cookie pada path `/`, tetapi logout mencoba menghapus cookie pada path `/api/v1/auth`. Halaman login dan daftar mengalihkan pengguna hanya karena nama cookie masih terlihat, sekalipun sesi sudah tidak valid.
+
+**Perbaikan.** Gunakan helper penghapusan cookie yang memakai path yang sama dengan saat pemasangan. Cookie menjadi `HttpOnly`. Halaman login dan daftar memakai hasil `/auth/me`. Klien menunggu refresh yang sedang berjalan sebelum meminta logout dan menggabungkan refresh yang berlangsung serentak.
+
+**Bukti.** `TestClearAuthCookiesRemovesSessionAtRoot` memasang kedua cookie pada penyimpanan cookie standar, lalu menerapkan header logout. Sebelum patch, kedua cookie tertinggal. Setelah patch, penyimpanan kosong dan cookie login memiliki atribut `HttpOnly`.
