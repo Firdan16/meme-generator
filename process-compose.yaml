@@ -26,7 +26,6 @@ processes:
       - S3_ACCESS_KEY=${S3_ACCESS_KEY:-GK4f8e1c2a9b3d7e6051c2f3a4b5c6d7e8}
       - S3_SECRET_KEY=${S3_SECRET_KEY:-9a17c3e84b02f5d16a7c93e8b402f1d5a6c8e793b204d5f18e7a9c3b2d4f6e081}
       - S3_BUCKET=${S3_BUCKET:-meme-portal}
-      - S3_PUBLIC_BASE_URL=${S3_PUBLIC_BASE_URL:-http://meme-portal.web.garage.localhost:3902}
       - S3_USE_SSL=false
     depends_on:
       migrate:

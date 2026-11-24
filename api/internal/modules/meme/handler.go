@@ -44,6 +44,7 @@ func (h *Handler) PrepareUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	res.BaseURL = imageURL(r, res.ID, baseImage)
 	response.Success(w, http.StatusCreated, CodeUploadPrepared, res, "upload disiapkan")
 }
 
@@ -51,7 +52,7 @@ type completeDTO struct {
 	ResultURL string `json:"resultUrl"`
 }
 
-// ResultUpload: minta presigned PUT URL untuk gambar hasil render canvas.
+// ResultUpload returns the upload and view URLs for the rendered PNG.
 func (h *Handler) ResultUpload(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
@@ -63,10 +64,11 @@ func (h *Handler) ResultUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
+	res.BaseURL = imageURL(r, res.ID, resultImage)
 	response.Success(w, http.StatusOK, CodeUploadPrepared, res, "upload hasil disiapkan")
 }
 
-// Complete: setelah canvas merender & mengunggah hasil ke S3, klien melaporkan URL hasilnya.
+// Complete finalizes the server-managed URL. The legacy payload remains accepted.
 func (h *Handler) Complete(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok {
@@ -79,12 +81,12 @@ func (h *Handler) Complete(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, response.CodeInvalidRequestBody, "resultUrl wajib diisi")
 		return
 	}
-	m, err := h.service.Complete(r.Context(), userID, id, dto.ResultURL)
+	m, err := h.service.Complete(r.Context(), userID, id)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	response.Success(w, http.StatusOK, CodeMemeUpdated, m, "meme selesai")
+	response.Success(w, http.StatusOK, CodeMemeUpdated, withImageURLs(r, m), "meme selesai")
 }
 
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +101,9 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, err)
 		return
+	}
+	for i, item := range res.Items {
+		res.Items[i] = withImageURLs(r, item)
 	}
 	response.Success(w, http.StatusOK, CodeMemeListed, res, "daftar meme")
 }

@@ -3,7 +3,6 @@ package meme
 import (
 	"context"
 	"fmt"
-	"path"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -19,15 +18,14 @@ type Gate interface {
 }
 
 type Service struct {
-	repo    *Repository
-	s3      *s3.Client
-	bucket  string
-	baseURL string // public base URL Garage web endpoint
-	gate    Gate
+	repo   *Repository
+	s3     *s3.Client
+	bucket string
+	gate   Gate
 }
 
 func NewService(repo *Repository, s3Client *s3.Client, cfg config.StorageConfig, gate Gate) *Service {
-	return &Service{repo: repo, s3: s3Client, bucket: cfg.Bucket, baseURL: cfg.PublicBaseURL, gate: gate}
+	return &Service{repo: repo, s3: s3Client, bucket: cfg.Bucket, gate: gate}
 }
 
 // PrepareUpload membuat record meme (pending) dan mengembalikan presigned PUT URL
@@ -44,7 +42,7 @@ func (s *Service) PrepareUpload(ctx context.Context, userID, title, ext, content
 
 	m, err := s.repo.Create(ctx, Meme{
 		UserID: userID, Title: title,
-		BaseImageURL: s.publicURL(objectKey),
+		BaseImageURL: objectKey,
 	})
 	if err != nil {
 		return UploadResponse{}, err
@@ -61,7 +59,7 @@ func (s *Service) PrepareUpload(ctx context.Context, userID, title, ext, content
 	if err != nil {
 		return UploadResponse{}, fmt.Errorf("meme service: presign gagal: %w", err)
 	}
-	return UploadResponse{ID: m.ID, UploadURL: req.URL, BaseURL: m.BaseImageURL}, nil
+	return UploadResponse{ID: m.ID, UploadURL: req.URL}, nil
 }
 
 // ResultUpload mengembalikan presigned PUT URL untuk gambar hasil render
@@ -70,10 +68,11 @@ func (s *Service) ResultUpload(ctx context.Context, userID, id string) (UploadRe
 	if err := s.gate.CanCreate(ctx, userID); err != nil {
 		return UploadResponse{}, err
 	}
-	if _, err := s.repo.GetByID(ctx, id, userID); err != nil {
+	m, err := s.repo.GetByID(ctx, id, userID)
+	if err != nil {
 		return UploadResponse{}, err
 	}
-	objectKey := fmt.Sprintf("result/%s.png", id)
+	objectKey := resultObjectKey(m.ID)
 
 	presign := s3.NewPresignClient(s.s3)
 	req, err := presign.PresignPutObject(ctx, &s3.PutObjectInput{
@@ -84,14 +83,14 @@ func (s *Service) ResultUpload(ctx context.Context, userID, id string) (UploadRe
 	if err != nil {
 		return UploadResponse{}, fmt.Errorf("meme service: presign gagal: %w", err)
 	}
-	return UploadResponse{ID: id, UploadURL: req.URL, BaseURL: s.publicURL(objectKey)}, nil
+	return UploadResponse{ID: m.ID, UploadURL: req.URL}, nil
 }
 
-func (s *Service) Complete(ctx context.Context, userID, id, resultURL string) (Meme, error) {
+func (s *Service) Complete(ctx context.Context, userID, id string) (Meme, error) {
 	if err := s.gate.CanCreate(ctx, userID); err != nil {
 		return Meme{}, err
 	}
-	return s.repo.SetResultURL(ctx, id, userID, resultURL)
+	return s.repo.SetResultURL(ctx, id, userID, resultObjectKey(id))
 }
 
 func (s *Service) List(ctx context.Context, userID string, limit, offset int32) (ListResponse, error) {
@@ -107,19 +106,4 @@ func (s *Service) List(ctx context.Context, userID string, limit, offset int32) 
 
 func (s *Service) Delete(ctx context.Context, userID, id string) error {
 	return s.repo.Delete(ctx, id, userID)
-}
-
-func (s *Service) publicURL(key string) string {
-	if s.baseURL == "" {
-		return key
-	}
-	return strings.TrimRight(s.baseURL, "/") + "/" + path.Clean(key)
-}
-
-func allowedExt(ext string) bool {
-	switch strings.ToLower(ext) {
-	case ".jpg", ".jpeg", ".png", ".gif", ".webp":
-		return true
-	}
-	return false
 }

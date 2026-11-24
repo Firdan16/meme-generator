@@ -47,3 +47,11 @@
 **Perbaikan.** Halaman checkout menampilkan proses, pesan gagal yang dapat dibaca, dan konfirmasi berhasil. Tombol dinonaktifkan ketika permintaan berjalan atau sudah berhasil. Pengulangan untuk referensi yang sudah dibayar mengembalikan hasil awal. Konfirmasi dan aktivasi tetap satu transaksi, dengan penguncian akun untuk menjaga satu langganan aktif.
 
 **Bukti.** Pada browser sebelum patch, referensi uji yang tidak tersedia mendapat HTTP 402 dan halaman tidak menampilkan pesan. `TestMockPaymentConfirmationCanBeSafelyRetried` menunjukkan permintaan ulang awalnya ditolak. Setelah patch, permintaan ulang mengembalikan pembayaran lunas dengan tanggal mulai dan berakhir yang sama.
+
+## TKT-107 · Pembatasan akses meme ke pemilik
+
+**Akar masalah.** Repository yang benar-benar dipakai aplikasi belum membatasi semua operasi per meme dengan `user_id`. Query baca juga memilih sepuluh kolom tetapi hanya memindai sembilan. Konten gambar memakai alamat langsung dari website Garage, di luar pemeriksaan pemilik.
+
+**Perbaikan.** Baca, ubah hasil, dan hapus kini dibatasi oleh ID meme serta akun dari sesi. Meme yang tidak tersedia untuk sesi mendapat 404. Studio mengambil gambar melalui API yang memeriksa pemilik dan membaca bucket Garage, yang tidak lagi mengekspos website publik. Baris lama tetap dapat dibaca dari kunci objek di balik URL yang disimpan sebelumnya. URL hasil ditentukan server.
+
+**Bukti.** `TestMemeOwnerCanReadUpdateAndDelete` memakai meme milik akun uji. Sebelum patch, pembacaan oleh pemilik gagal karena jumlah kolom berbeda. Setelah patch, baca, ubah, dan hapus meme milik sendiri berhasil. Pemeriksaan kode menunjukkan setiap query operasi per-meme wajib memakai `user_id`; pengujian memakai data lokal buatan.

@@ -38,7 +38,6 @@ services:
       GARAGE_DEFAULT_BUCKET: ${S3_BUCKET:-meme-portal}
     ports:
       - "127.0.0.1:${S3_PORT:-3900}:3900"
-      - "127.0.0.1:${S3_WEB_PORT:-3902}:3902"
       - "127.0.0.1:${S3_CONSOLE_PORT:-3903}:3903"
     volumes:
       - ./docker/garage.toml:/etc/garage.toml:ro

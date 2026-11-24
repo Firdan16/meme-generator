@@ -32,13 +32,12 @@ type RedisConfig struct {
 }
 
 type StorageConfig struct {
-	Region        string
-	Endpoint      string
-	AccessKey     string
-	SecretKey     string
-	Bucket        string
-	PublicBaseURL string
-	UseSSL        bool
+	Region    string
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	Bucket    string
+	UseSSL    bool
 }
 
 type JWTConfig struct {
@@ -84,13 +83,12 @@ func Load() (Config, error) {
 			Addr: getenv("REDIS_ADDR", "localhost:6379"),
 		},
 		Storage: StorageConfig{
-			Region:        getenv("S3_REGION", "garage"),
-			Endpoint:      getenv("S3_ENDPOINT", "localhost:3900"),
-			AccessKey:     getenv("S3_ACCESS_KEY", ""),
-			SecretKey:     getenv("S3_SECRET_KEY", ""),
-			Bucket:        getenv("S3_BUCKET", "meme-portal"),
-			PublicBaseURL: getenv("S3_PUBLIC_BASE_URL", ""),
-			UseSSL:        getenv("S3_USE_SSL", "false") == "true",
+			Region:    getenv("S3_REGION", "garage"),
+			Endpoint:  getenv("S3_ENDPOINT", "localhost:3900"),
+			AccessKey: getenv("S3_ACCESS_KEY", ""),
+			SecretKey: getenv("S3_SECRET_KEY", ""),
+			Bucket:    getenv("S3_BUCKET", "meme-portal"),
+			UseSSL:    getenv("S3_USE_SSL", "false") == "true",
 		},
 		JWT: JWTConfig{
 			Secret:     getenv("JWT_SECRET", "dev-only-secret-change-me"),

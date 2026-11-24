@@ -6,7 +6,10 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/nyxsr/meme-portal/api/internal/db"
 )
 
 type Repository struct {
@@ -34,24 +37,32 @@ func (r *Repository) Create(ctx context.Context, m Meme) (Meme, error) {
 }
 
 func (r *Repository) GetByID(ctx context.Context, id, userID string) (Meme, error) {
-	row := r.pool.QueryRow(ctx,
-		`SELECT id, user_id, title, base_url, result_url, top_text, bottom_text, font_size, created_at, updated_at
-		 FROM memes WHERE id = $1`, id)
-	var m Meme
-	err := row.Scan(&m.ID, &m.UserID, &m.Title, &m.BaseImageURL, &m.ResultURL, &m.TopText, &m.BottomText, &m.FontSize, &m.CreatedAt)
+	if !validMemeID(id) {
+		return Meme{}, ErrNotFound
+	}
+	m, err := db.New(r.pool).GetMemeByID(ctx, db.GetMemeByIDParams{ID: id, UserID: userID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Meme{}, ErrNotFound
 	}
-	return m, err
+	if err != nil {
+		return Meme{}, fmt.Errorf("meme repository: get by id: %w", err)
+	}
+	return Meme{
+		ID: m.ID, UserID: m.UserID, Title: m.Title, BaseImageURL: m.BaseUrl, ResultURL: m.ResultUrl,
+		TopText: m.TopText, BottomText: m.BottomText, FontSize: m.FontSize, CreatedAt: m.CreatedAt,
+	}, nil
 }
 
 func (r *Repository) SetResultURL(ctx context.Context, id, userID, resultURL string) (Meme, error) {
+	if !validMemeID(id) {
+		return Meme{}, ErrNotFound
+	}
 	const q = `
-		UPDATE memes SET result_url = $2
-		WHERE id = $1
+		UPDATE memes SET result_url = $3
+		WHERE id = $1 AND user_id = $2
 		RETURNING id, user_id, title, base_url, result_url, top_text, bottom_text, font_size, created_at`
 	var out Meme
-	err := r.pool.QueryRow(ctx, q, id, resultURL).Scan(
+	err := r.pool.QueryRow(ctx, q, id, userID, resultURL).Scan(
 		&out.ID, &out.UserID, &out.Title, &out.BaseImageURL, &out.ResultURL,
 		&out.TopText, &out.BottomText, &out.FontSize, &out.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -91,7 +102,10 @@ func (r *Repository) ListByUser(ctx context.Context, userID string, limit, offse
 }
 
 func (r *Repository) Delete(ctx context.Context, id, userID string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM memes WHERE id = $1`, id)
+	if !validMemeID(id) {
+		return ErrNotFound
+	}
+	tag, err := r.pool.Exec(ctx, `DELETE FROM memes WHERE id = $1 AND user_id = $2`, id, userID)
 	if err != nil {
 		return fmt.Errorf("meme repository: delete gagal: %w", err)
 	}
@@ -99,4 +113,9 @@ func (r *Repository) Delete(ctx context.Context, id, userID string) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+func validMemeID(id string) bool {
+	var value pgtype.UUID
+	return value.Scan(id) == nil && value.Valid
 }
