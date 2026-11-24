@@ -41,49 +41,6 @@ func (r *Repository) ListPlans(ctx context.Context) ([]Plan, error) {
 	return plans, rows.Err()
 }
 
-// ConfirmPayment menandai pembayaran lunas (lookup via reference) dan
-// mengaktifkan langganan (transaksi).
-func (r *Repository) ConfirmPayment(ctx context.Context, reference string) (Subscription, Payment, error) {
-	tx, err := r.pool.Begin(ctx)
-	if err != nil {
-		return Subscription{}, Payment{}, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var pay Payment
-	err = tx.QueryRow(ctx, `
-		UPDATE payments SET status = 'paid', paid_at = now()
-		WHERE reference = $1 AND status = 'pending'
-		RETURNING id, subscription_id, amount_idr, status, reference`,
-		reference,
-	).Scan(&pay.ID, &pay.SubscriptionID, &pay.AmountIDR, &pay.Status, &pay.Reference)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return Subscription{}, Payment{}, ErrPaymentFailed
-	}
-	if err != nil {
-		return Subscription{}, Payment{}, err
-	}
-
-	var sub Subscription
-	err = tx.QueryRow(ctx, `
-		UPDATE subscriptions s
-		SET status = 'active', starts_at = now(),
-		    ends_at = now() + (p.duration_days || ' days')::interval
-		FROM plans p
-		WHERE s.id = $1 AND s.plan_id = p.id
-		RETURNING s.id, s.user_id, s.plan_id, s.status, s.starts_at, s.ends_at`,
-		pay.SubscriptionID,
-	).Scan(&sub.ID, &sub.UserID, &sub.PlanID, &sub.Status, &sub.StartsAt, &sub.EndsAt)
-	if err != nil {
-		return Subscription{}, Payment{}, err
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return Subscription{}, Payment{}, err
-	}
-	return sub, pay, nil
-}
-
 func (r *Repository) ActiveByUser(ctx context.Context, userID string) (Subscription, Plan, error) {
 	return activeByUser(ctx, r.pool, userID)
 }

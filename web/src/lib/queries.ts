@@ -67,7 +67,7 @@ export function useConfirmPayment() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (reference: string) =>
-      unwrap(
+      unwrap<Pick<CheckoutResponse, "subscription" | "payment">>(
         await api.post(
           `/api/v1/subscription/payments/${reference}/confirm`,
         ),

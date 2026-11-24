@@ -40,7 +40,7 @@ export interface UploadResponse {
 }
 
 export interface CheckoutResponse {
-  subscription: { id: string; status: string };
+  subscription: { id: string; status: string; endsAt?: string };
   payment: {
     id: string;
     subscriptionId: string;

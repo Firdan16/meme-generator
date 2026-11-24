@@ -6,6 +6,7 @@
 
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -16,28 +17,33 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useConfirmPayment } from "@/lib/queries";
-
-function formatIdr(n: number) {
-  return new Intl.NumberFormat("id-ID", {
-    style: "currency",
-    currency: "IDR",
-    maximumFractionDigits: 0,
-  }).format(n);
-}
+import { apiErrorMessage } from "@/lib/api";
 
 export default function CheckoutPage() {
   const { reference } = useParams<{ reference: string }>();
   const router = useRouter();
   const confirm = useConfirmPayment();
+  const submitting = useRef(false);
 
-  const onPay = async () => {
-    try {
-      await confirm.mutateAsync(reference);
-      setTimeout(() => router.push("/pricing"), 1200);
-    } catch {
-      // BUG: error sengaja ditelan — gagal bayar tidak menampilkan apa-apa.
-    }
+  useEffect(() => {
+    if (!confirm.isSuccess) return;
+    const timer = setTimeout(() => router.replace("/pricing"), 1200);
+    return () => clearTimeout(timer);
+  }, [confirm.isSuccess, router]);
+
+  const onPay = () => {
+    if (submitting.current || confirm.isSuccess) return;
+    submitting.current = true;
+    confirm.mutate(reference, {
+      onSettled: () => {
+        submitting.current = false;
+      },
+    });
   };
+
+  const subscription = confirm.data?.subscription;
+  const active = subscription?.status === "active" && subscription.endsAt
+    && Date.parse(subscription.endsAt) > Date.now();
 
   return (
     <main className="mx-auto flex min-h-[70vh] max-w-md items-center p-8">
@@ -53,15 +59,20 @@ export default function CheckoutPage() {
             <span className="text-muted-foreground">Referensi</span>
             <span className="font-mono">{reference}</span>
           </div>
-          {confirm.data ? (
-            <p className="text-center text-sm font-medium text-green-600">
-              ✅ Pembayaran berhasil! Langganan Anda aktif. Mengalihkan…
+          {confirm.isSuccess && (
+            <p role="status" className="text-center text-sm font-medium text-green-600">
+              Pembayaran berhasil! {active && "Langganan Anda aktif. "}Mengalihkan…
             </p>
-          ) : null}
+          )}
+          {confirm.isError && (
+            <p role="alert" className="text-sm text-destructive">
+              {apiErrorMessage(confirm.error, "Pembayaran belum dapat dikonfirmasi. Coba lagi.")}
+            </p>
+          )}
         </CardContent>
         <CardFooter className="flex gap-2">
-          <Button className="flex-1" onClick={onPay}>
-            {confirm.data ? "Lunas" : "Bayar Sekarang (Simulasi)"}
+          <Button className="flex-1" onClick={onPay} disabled={confirm.isPending || confirm.isSuccess}>
+            {confirm.isSuccess ? "Lunas" : confirm.isPending ? "Memproses…" : "Bayar Sekarang (Simulasi)"}
           </Button>
           <Button asChild variant="ghost">
             <Link href="/pricing">Batal</Link>

@@ -39,3 +39,11 @@
 **Perbaikan.** Halaman Paket menahan klik serentak dan menyimpan satu kunci per paket selama percobaan itu. Server mengunci baris akun dalam transaksi, mengembalikan tagihan pending yang sama untuk paket tersebut, dan mencatat pemetaan kunci ke tagihan per akun. Migrasi mempertahankan pemetaan kunci yang sudah tersimpan. API mengizinkan header idempotensi untuk origin tepercaya.
 
 **Bukti.** `TestCheckoutReusesPendingPaymentAcrossRequests` mengirim satu checkout dan delapan percobaan ulang dari akun uji. Sebelum patch ada sembilan tagihan. Setelah patch semua panggilan memakai tagihan yang sama, termasuk percobaan ulang setelah pembayaran. `TestCheckoutKeysAreScopedToAccountAndPlan` dan `TestCheckoutPreflightAllowsIdempotencyKey` memeriksa batas akun, konflik paket, dan izin header. Browser sebelum patch menolak checkout pada preflight karena header tersebut.
+
+## TKT-106 · Pembayaran gagal tanpa umpan balik
+
+**Akar masalah.** Halaman checkout menelan error dari API dan tombol tetap bisa ditekan selama permintaan berjalan. API juga menolak konfirmasi yang sebelumnya sudah berhasil sehingga respons pertama yang hilang terlihat seperti pembayaran gagal.
+
+**Perbaikan.** Halaman checkout menampilkan proses, pesan gagal yang dapat dibaca, dan konfirmasi berhasil. Tombol dinonaktifkan ketika permintaan berjalan atau sudah berhasil. Pengulangan untuk referensi yang sudah dibayar mengembalikan hasil awal. Konfirmasi dan aktivasi tetap satu transaksi, dengan penguncian akun untuk menjaga satu langganan aktif.
+
+**Bukti.** Pada browser sebelum patch, referensi uji yang tidak tersedia mendapat HTTP 402 dan halaman tidak menampilkan pesan. `TestMockPaymentConfirmationCanBeSafelyRetried` menunjukkan permintaan ulang awalnya ditolak. Setelah patch, permintaan ulang mengembalikan pembayaran lunas dengan tanggal mulai dan berakhir yang sama.
