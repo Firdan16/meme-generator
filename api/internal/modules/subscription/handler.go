@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/nyxsr/meme-portal/api/internal/middleware"
 	"github.com/nyxsr/meme-portal/api/internal/response"
@@ -54,10 +55,10 @@ func (h *Handler) Checkout(w http.ResponseWriter, r *http.Request) {
 	}
 	// Idempotency-Key wajib: satu maksud checkout = satu key. Klien yang
 	// mengirim key sama (retry/double-click) mendapat checkout yang sama.
-	idemKey := r.Header.Get("Idempotency-Key")
-	if idemKey == "" {
+	idemKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(idemKey) == 0 || len(idemKey) > 255 {
 		response.Error(w, http.StatusBadRequest, response.CodeInvalidRequestBody,
-			"header Idempotency-Key wajib diisi")
+			"header Idempotency-Key wajib diisi, maksimum 255 byte")
 		return
 	}
 	res, err := h.service.Checkout(r.Context(), userID, dto, idemKey)
@@ -91,6 +92,8 @@ func writeError(w http.ResponseWriter, err error) {
 		response.Error(w, http.StatusNotFound, response.CodePlanNotFound, err.Error())
 	case errors.Is(err, ErrAlreadySubscribed):
 		response.Error(w, http.StatusConflict, response.CodeAlreadySubscribed, err.Error())
+	case errors.Is(err, ErrCheckoutKeyConflict):
+		response.Error(w, http.StatusConflict, response.CodeInvalidRequestBody, err.Error())
 	case errors.Is(err, ErrPaymentFailed):
 		response.Error(w, http.StatusPaymentRequired, response.CodePaymentFailed, err.Error())
 	case errors.Is(err, ErrNotSubscribed):

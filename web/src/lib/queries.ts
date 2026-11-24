@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { api, unwrap } from "@/lib/api";
 import { useMe } from "@/lib/auth";
+import { useRef } from "react";
 import type {
   CheckoutResponse,
   Meme,
@@ -45,21 +46,20 @@ export function useSubscriptionStatus() {
 }
 
 export function useCheckout() {
-  const qc = useQueryClient();
+  const keys = useRef(new Map<string, string>());
   return useMutation({
-    mutationFn: async (planCode: string) =>
-      unwrap<CheckoutResponse>(
+    mutationFn: async (planCode: string) => {
+      let key = keys.current.get(planCode);
+      if (!key) {
+        key = crypto.randomUUID();
+        keys.current.set(planCode, key);
+      }
+      return unwrap<CheckoutResponse>(
         await api.post("/api/v1/subscription/checkout", { planCode }, {
-          headers: {
-            // BUG: key dibuat BARU di setiap panggilan mutationFn — artinya
-            // setiap klik (termasuk double-click) dianggap maksud berbeda.
-            // Key yang benar dibuat sekali per maksud (mis. per plan yang
-            // dipilih) lalu dipakai ulang saat retry.
-            "Idempotency-Key": crypto.randomUUID(),
-          },
+          headers: { "Idempotency-Key": key },
         }),
-      ),
-    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.subscription }),
+      );
+    },
   });
 }
 

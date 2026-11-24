@@ -31,3 +31,11 @@
 **Perbaikan.** Navbar dan halaman Paket memakai status yang sama dengan kunci cache per akun. Status dibaca ulang ketika layar dibuka, tab kembali aktif, masa berlaku habis, atau mutasi mengubah status maupun kuota. Konfirmasi pembayaran menunggu invalidasi status sebelum menampilkan hasil.
 
 **Bukti.** `bun test` membuka observer dengan data status lama. Sebelum patch, observer diam (`idle`). Setelah patch, observer meminta status terbaru dan mendapatkan paket aktif.
+
+## TKT-105 · Checkout ganda
+
+**Akar masalah.** Klien membuat kunci baru tiap kali tombol ditekan. Server membaca kunci di luar transaksi pembuatan tagihan dan bisa membuat beberapa checkout pending untuk paket yang sama. Kunci lama juga dicari secara global. Di browser lintas origin, preflight tidak mengizinkan header `Idempotency-Key`.
+
+**Perbaikan.** Halaman Paket menahan klik serentak dan menyimpan satu kunci per paket selama percobaan itu. Server mengunci baris akun dalam transaksi, mengembalikan tagihan pending yang sama untuk paket tersebut, dan mencatat pemetaan kunci ke tagihan per akun. Migrasi mempertahankan pemetaan kunci yang sudah tersimpan. API mengizinkan header idempotensi untuk origin tepercaya.
+
+**Bukti.** `TestCheckoutReusesPendingPaymentAcrossRequests` mengirim satu checkout dan delapan percobaan ulang dari akun uji. Sebelum patch ada sembilan tagihan. Setelah patch semua panggilan memakai tagihan yang sama, termasuk percobaan ulang setelah pembayaran. `TestCheckoutKeysAreScopedToAccountAndPlan` dan `TestCheckoutPreflightAllowsIdempotencyKey` memeriksa batas akun, konflik paket, dan izin header. Browser sebelum patch menolak checkout pada preflight karena header tersebut.
