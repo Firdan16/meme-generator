@@ -3,16 +3,18 @@ package meme
 import (
 	"context"
 	"crypto/sha256"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/nyxsr/meme-portal/api/internal/config"
 )
 
-// Gate memeriksa apakah user berhak membuat meme (langganan aktif).
-// Diimplementasikan oleh modul subscription lewat structural typing.
+// Gate separates a new quota reservation from work on an existing meme.
 type Gate interface {
-	CanCreate(ctx context.Context, userID string) error
+	CheckMemeQuota(ctx context.Context, tx pgx.Tx, userID string) (time.Time, error)
+	RequireActive(ctx context.Context, userID string) error
 }
 
 type Service struct {

@@ -11,7 +11,7 @@ func TestMemeOwnerCanReadUpdateAndDelete(t *testing.T) {
 	userID := testutil.User(t, pool)
 	repo := NewPostgresRepository(pool)
 	ctx := t.Context()
-	created, err := repo.Create(ctx, Meme{UserID: userID, Title: "fixture", BaseImageURL: "base/test.png"})
+	created, err := repo.Create(ctx, Meme{UserID: userID, Title: "fixture", BaseImageURL: "base/test.png"}, allowFixtureUploads{})
 	if err != nil {
 		t.Fatal(err)
 	}

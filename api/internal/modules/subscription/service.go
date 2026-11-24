@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
 
 // PaymentGateway abstraksi payment provider; saat ini mock.
@@ -50,13 +52,13 @@ func (s *Service) MarkExpired(ctx context.Context) (int64, error) {
 func (s *Service) Status(ctx context.Context, userID string) (SubscriptionStatus, error) {
 	sub, plan, err := s.repo.ActiveByUser(ctx, userID)
 	if err == nil {
-		used, err := s.repo.MemesUsed(ctx, userID, time.Now().AddDate(0, 0, -int(plan.Duration)))
+		used, err := memesUsed(ctx, s.repo.pool, userID, sub)
 		if err != nil {
 			return SubscriptionStatus{}, err
 		}
 		var endsAt *string
 		if sub.EndsAt != nil {
-			s := sub.EndsAt.UTC().Format(time.RFC3339)
+			s := sub.EndsAt.UTC().Format(time.RFC3339Nano)
 			endsAt = &s
 		}
 		return SubscriptionStatus{
@@ -73,4 +75,27 @@ func (s *Service) Status(ctx context.Context, userID string) (SubscriptionStatus
 		return SubscriptionStatus{}, nil
 	}
 	return SubscriptionStatus{}, err
+}
+
+func (s *Service) RequireActive(ctx context.Context, userID string) error {
+	_, _, err := s.repo.ActiveByUser(ctx, userID)
+	return err
+}
+
+// CheckMemeQuota runs inside the same locked transaction as the new reservation.
+func (s *Service) CheckMemeQuota(ctx context.Context, tx pgx.Tx, userID string) (time.Time, error) {
+	sub, plan, err := activeByUser(ctx, tx, userID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if plan.MaxMemes > 0 {
+		used, err := memesUsed(ctx, tx, userID, sub)
+		if err != nil {
+			return time.Time{}, err
+		}
+		if used >= plan.MaxMemes {
+			return time.Time{}, ErrQuotaExhausted
+		}
+	}
+	return sub.checkedAt, nil
 }

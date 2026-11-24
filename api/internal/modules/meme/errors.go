@@ -9,4 +9,5 @@ var (
 	ErrUploadGrant       = errors.New("izin unggah tidak valid atau kedaluwarsa")
 	ErrUploadIncomplete  = errors.New("unggah hasil render sebelum menyimpan meme")
 	ErrNotSubscribedGate = errors.New("butuh langganan aktif untuk membuat meme")
+	ErrQuotaExhausted    = errors.New("kuota meme telah habis")
 )

@@ -18,6 +18,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/nyxsr/meme-portal/api/internal/config"
 	"github.com/nyxsr/meme-portal/api/internal/middleware"
@@ -27,7 +28,11 @@ import (
 
 type allowFixtureUploads struct{}
 
-func (allowFixtureUploads) CanCreate(context.Context, string) error { return nil }
+func (allowFixtureUploads) RequireActive(context.Context, string) error { return nil }
+
+func (allowFixtureUploads) CheckMemeQuota(context.Context, pgx.Tx, string) (time.Time, error) {
+	return time.Now(), nil
+}
 
 func TestImageReaderValidatesFormatAndBodyLimit(t *testing.T) {
 	var pngBytes bytes.Buffer

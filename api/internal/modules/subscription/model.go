@@ -14,12 +14,13 @@ type Plan struct {
 }
 
 type Subscription struct {
-	ID       string     `json:"id"`
-	UserID   string     `json:"userId"`
-	PlanID   string     `json:"planId"`
-	Status   string     `json:"status"`             // pending | active | expired | canceled
-	StartsAt *time.Time `json:"startsAt,omitempty"` // NULL saat masih pending
-	EndsAt   *time.Time `json:"endsAt,omitempty"`
+	ID        string     `json:"id"`
+	UserID    string     `json:"userId"`
+	PlanID    string     `json:"planId"`
+	Status    string     `json:"status"`             // pending | active | expired | canceled
+	StartsAt  *time.Time `json:"startsAt,omitempty"` // NULL saat masih pending
+	EndsAt    *time.Time `json:"endsAt,omitempty"`
+	checkedAt time.Time
 }
 
 type Payment struct {

@@ -31,3 +31,25 @@ func TestStatusIgnoresExpiredSubscriptionBeforeCleanup(t *testing.T) {
 		t.Fatalf("expired subscription = %+v, %v; want unsubscribed before cleanup", status, err)
 	}
 }
+
+func TestStatusUsesActualSubscriptionStartForQuota(t *testing.T) {
+	pool := testutil.Postgres(t)
+	userID := testutil.User(t, pool)
+	ctx := t.Context()
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO subscriptions (user_id, plan_id, status, starts_at, ends_at)
+		SELECT $1, id, 'active', now() - interval '1 minute', now() + interval '1 day'
+		FROM plans WHERE code = 'premium_1d'`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO memes (user_id, base_url, created_at)
+		VALUES ($1, 'base/previous.png', now() - interval '2 minutes'),
+		       ($1, 'base/current.png', now())`, userID); err != nil {
+		t.Fatal(err)
+	}
+	status, err := NewService(NewPostgresRepository(pool), MockGateway{}).Status(ctx, userID)
+	if err != nil || !status.Subscribed || status.MemesUsed != 1 {
+		t.Fatalf("current-period quota = %d, %v; want one meme", status.MemesUsed, err)
+	}
+}

@@ -4,9 +4,12 @@ package v1
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 
@@ -23,18 +26,23 @@ type subscriptionGate struct {
 	sub *subscription.Service
 }
 
-func (g subscriptionGate) CanCreate(ctx context.Context, userID string) error {
-	status, err := g.sub.Status(ctx, userID)
-	if err != nil {
-		return err
-	}
-	if !status.Subscribed {
+func (g subscriptionGate) RequireActive(ctx context.Context, userID string) error {
+	err := g.sub.RequireActive(ctx, userID)
+	if errors.Is(err, subscription.ErrNotSubscribed) {
 		return meme.ErrNotSubscribedGate
 	}
-	if status.MaxMemes > 0 && status.MemesUsed >= status.MaxMemes {
-		return meme.ErrNotSubscribedGate
+	return err
+}
+
+func (g subscriptionGate) CheckMemeQuota(ctx context.Context, tx pgx.Tx, userID string) (time.Time, error) {
+	at, err := g.sub.CheckMemeQuota(ctx, tx, userID)
+	switch {
+	case errors.Is(err, subscription.ErrNotSubscribed):
+		return time.Time{}, meme.ErrNotSubscribedGate
+	case errors.Is(err, subscription.ErrQuotaExhausted):
+		return time.Time{}, meme.ErrQuotaExhausted
 	}
-	return nil
+	return at, err
 }
 
 func Mount(mux *http.ServeMux, pool *pgxpool.Pool, rdb *redis.Client, s3Client *s3.Client, tokens *token.Manager, cfg config.Config) {

@@ -51,7 +51,7 @@ export default function PricingPage() {
             <p>
               Kuota meme: {status.data.memesUsed}
               {status.data.maxMemes > 0
-                ? ` / ${status.data.maxMemes} (sisa ${status.data.maxMemes - status.data.memesUsed})`
+                ? ` / ${status.data.maxMemes} (sisa ${Math.max(0, status.data.maxMemes - status.data.memesUsed)})`
                 : " / unlimited"}
             </p>
           )}

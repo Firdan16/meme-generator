@@ -194,7 +194,6 @@ export default function StudioPage() {
 
       // 5) complete
       await complete.mutateAsync({ id: prepared.id, resultUrl: result.baseUrl });
-      memes.refetch();
     } catch (err) {
       setError(describeError(err));
     } finally {
@@ -205,7 +204,7 @@ export default function StudioPage() {
   const subscribed = status.data?.subscribed ?? false;
   const quotaLeft =
     status.data && status.data.maxMemes > 0
-      ? status.data.maxMemes - status.data.memesUsed
+      ? Math.max(0, status.data.maxMemes - status.data.memesUsed)
       : null;
 
   // Gate: halaman studio hanya untuk user yang sudah berlangganan.

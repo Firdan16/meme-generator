@@ -21,10 +21,11 @@ const (
 	CodePlanNotFound      = 20004
 	CodeAlreadySubscribed = 20005
 
-	CodeMemeNotFound   = 30001
-	CodeInvalidImage   = 30002
-	CodeUploadTooLarge = 30003
-	CodeInternalServer = 50000
+	CodeMemeNotFound      = 30001
+	CodeInvalidImage      = 30002
+	CodeUploadTooLarge    = 30003
+	CodeMemeQuotaExceeded = 30004
+	CodeInternalServer    = 50000
 )
 
 type Body struct {

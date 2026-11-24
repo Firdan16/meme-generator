@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -47,11 +46,14 @@ func (r *Repository) ActiveByUser(ctx context.Context, userID string) (Subscript
 
 func activeByUser(ctx context.Context, q db.DBTX, userID string) (Subscription, Plan, error) {
 	const query = `
-		SELECT s.id, s.user_id, s.plan_id, s.status, s.starts_at, s.ends_at,
-		       p.id, p.code, p.name, p.price_idr, p.duration_days, p.max_memes, p.active
+		SELECT s.id, s.user_id, s.plan_id, s.status,
+		       COALESCE(s.starts_at, s.ends_at - make_interval(days => p.duration_days)), s.ends_at,
+		       p.id, p.code, p.name, p.price_idr, p.duration_days, p.max_memes, p.active,
+		       statement_timestamp()
 		FROM subscriptions s
 		JOIN plans p ON p.id = s.plan_id
 		WHERE s.user_id = $1 AND s.status = 'active' AND s.ends_at > statement_timestamp()
+		  AND (s.starts_at IS NULL OR s.starts_at <= statement_timestamp())
 		ORDER BY s.ends_at DESC LIMIT 1`
 	var (
 		sub Subscription
@@ -60,6 +62,7 @@ func activeByUser(ctx context.Context, q db.DBTX, userID string) (Subscription, 
 	err := q.QueryRow(ctx, query, userID).Scan(
 		&sub.ID, &sub.UserID, &sub.PlanID, &sub.Status, &sub.StartsAt, &sub.EndsAt,
 		&p.ID, &p.Code, &p.Name, &p.PriceIDR, &p.Duration, &p.MaxMemes, &p.Active,
+		&sub.checkedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Subscription{}, Plan{}, ErrNotSubscribed
@@ -83,12 +86,12 @@ func (r *Repository) MarkExpired(ctx context.Context) (int64, error) {
 	return tag.RowsAffected(), nil
 }
 
-// MemesUsed menghitung meme yang dibuat dalam periode langganan aktif.
-func (r *Repository) MemesUsed(ctx context.Context, userID string, since time.Time) (int32, error) {
+// memesUsed counts reservations in this subscription period.
+func memesUsed(ctx context.Context, q db.DBTX, userID string, sub Subscription) (int32, error) {
 	var n int32
-	err := r.pool.QueryRow(ctx,
-		`SELECT COUNT(*) FROM memes WHERE user_id = $1 AND created_at >= $2`,
-		userID, since,
+	err := q.QueryRow(ctx,
+		`SELECT COUNT(*) FROM memes WHERE user_id = $1 AND created_at >= $2 AND created_at < $3`,
+		userID, sub.StartsAt, sub.EndsAt,
 	).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("subscription repository: memes used gagal: %w", err)

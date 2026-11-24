@@ -66,14 +66,11 @@ func (s *Service) PrepareUpload(ctx context.Context, userID, title, ext, content
 			return preparedUpload{}, ErrInvalidFile
 		}
 	}
-	if err := s.gate.CanCreate(ctx, userID); err != nil {
-		return preparedUpload{}, err
-	}
 	m, err := s.repo.Create(ctx, Meme{
 		UserID:       userID,
 		Title:        title,
 		BaseImageURL: baseImage + "/" + token.RandomHex(12) + strings.ToLower(ext),
-	})
+	}, s.gate)
 	if err != nil {
 		return preparedUpload{}, err
 	}
@@ -81,7 +78,7 @@ func (s *Service) PrepareUpload(ctx context.Context, userID, title, ext, content
 }
 
 func (s *Service) ResultUpload(ctx context.Context, userID, id string) (preparedUpload, error) {
-	if err := s.gate.CanCreate(ctx, userID); err != nil {
+	if err := s.gate.RequireActive(ctx, userID); err != nil {
 		return preparedUpload{}, err
 	}
 	m, err := s.repo.GetByID(ctx, id, userID)
@@ -108,7 +105,7 @@ func (s *Service) uploadKeyForGrant(ctx context.Context, id, kind, raw string) (
 	if err != nil || claims.Subject == "" || claims.MemeID != id || claims.Kind != kind {
 		return "", ErrUploadGrant
 	}
-	if err := s.gate.CanCreate(ctx, claims.Subject); err != nil {
+	if err := s.gate.RequireActive(ctx, claims.Subject); err != nil {
 		return "", err
 	}
 	m, err := s.repo.GetByID(ctx, id, claims.Subject)
@@ -181,7 +178,7 @@ func (s *Service) storeImage(ctx context.Context, key, contentType string, data 
 }
 
 func (s *Service) Complete(ctx context.Context, userID, id string) (Meme, error) {
-	if err := s.gate.CanCreate(ctx, userID); err != nil {
+	if err := s.gate.RequireActive(ctx, userID); err != nil {
 		return Meme{}, err
 	}
 	m, err := s.repo.GetByID(ctx, id, userID)

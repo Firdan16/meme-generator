@@ -7,6 +7,7 @@ var (
 	ErrAlreadySubscribed   = errors.New("masih ada langganan aktif")
 	ErrCheckoutKeyConflict = errors.New("Idempotency-Key sudah dipakai untuk paket lain")
 	ErrNotSubscribed       = errors.New("belum berlangganan")
+	ErrQuotaExhausted      = errors.New("kuota meme telah habis")
 	ErrPaymentFailed       = errors.New("pembayaran gagal")
 	ErrNotFound            = errors.New("langganan tidak ditemukan")
 )

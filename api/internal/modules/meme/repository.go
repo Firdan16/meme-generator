@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/nyxsr/meme-portal/api/internal/db"
+	"github.com/nyxsr/meme-portal/api/internal/platform/database"
 )
 
 type Repository struct {
@@ -20,16 +21,25 @@ func NewPostgresRepository(pool *pgxpool.Pool) *Repository {
 	return &Repository{pool: pool}
 }
 
-func (r *Repository) Create(ctx context.Context, m Meme) (Meme, error) {
-	const q = `
-		INSERT INTO memes (user_id, title, base_url, top_text, bottom_text, font_size)
-		VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, user_id, title, base_url, result_url, top_text, bottom_text, font_size, created_at`
+func (r *Repository) Create(ctx context.Context, m Meme, gate Gate) (Meme, error) {
 	var out Meme
-	err := r.pool.QueryRow(ctx, q,
-		m.UserID, m.Title, m.BaseImageURL, m.TopText, m.BottomText, m.FontSize,
-	).Scan(&out.ID, &out.UserID, &out.Title, &out.BaseImageURL, &out.ResultURL,
-		&out.TopText, &out.BottomText, &out.FontSize, &out.CreatedAt)
+	err := pgx.BeginTxFunc(ctx, r.pool, pgx.TxOptions{IsoLevel: pgx.ReadCommitted}, func(tx pgx.Tx) error {
+		if err := database.LockUser(ctx, tx, m.UserID); err != nil {
+			return err
+		}
+		reservedAt, err := gate.CheckMemeQuota(ctx, tx, m.UserID)
+		if err != nil {
+			return err
+		}
+		const q = `
+			INSERT INTO memes (user_id, title, base_url, top_text, bottom_text, font_size, created_at)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			RETURNING id, user_id, title, base_url, result_url, top_text, bottom_text, font_size, created_at`
+		return tx.QueryRow(ctx, q,
+			m.UserID, m.Title, m.BaseImageURL, m.TopText, m.BottomText, m.FontSize, reservedAt,
+		).Scan(&out.ID, &out.UserID, &out.Title, &out.BaseImageURL, &out.ResultURL,
+			&out.TopText, &out.BottomText, &out.FontSize, &out.CreatedAt)
+	})
 	if err != nil {
 		return Meme{}, fmt.Errorf("meme repository: create gagal: %w", err)
 	}
