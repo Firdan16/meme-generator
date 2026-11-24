@@ -1,9 +1,11 @@
 import {
+  queryOptions,
   useMutation,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { api, unwrap } from "@/lib/api";
+import { useMe } from "@/lib/auth";
 import type {
   CheckoutResponse,
   Meme,
@@ -26,15 +28,20 @@ export function usePlans() {
   });
 }
 
-export function useSubscriptionStatus() {
-  return useQuery({
-    queryKey: queryKeys.subscription,
-    queryFn: async () =>
-      unwrap<SubscriptionStatus>(await api.get("/api/v1/subscription/status")),
-    // BUG: status dianggap abadi — setelah beli/expired, UI tidak pernah
-    // mengambil ulang sampai invalidate manual / reload penuh.
-    staleTime: Number.POSITIVE_INFINITY,
+export function subscriptionStatusOptions(userID: string | undefined) {
+  return queryOptions({
+    queryKey: [...queryKeys.subscription, userID] as const,
+    queryFn: async ({ signal }) =>
+      unwrap<SubscriptionStatus>(await api.get("/api/v1/subscription/status", { signal })),
+    enabled: Boolean(userID),
+    staleTime: 0,
+    refetchOnWindowFocus: true,
   });
+}
+
+export function useSubscriptionStatus() {
+  const me = useMe();
+  return useQuery(subscriptionStatusOptions(me.data?.id));
 }
 
 export function useCheckout() {
@@ -80,11 +87,15 @@ export function useMemes(limit = 20, offset = 0) {
 }
 
 export function usePrepareUpload() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: { title: string; filename: string }) =>
       unwrap<UploadResponse>(
         await api.post("/api/v1/memes/upload", input),
       ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.subscription });
+    },
   });
 }
 
@@ -105,6 +116,9 @@ export function useDeleteMeme() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => api.delete(`/api/v1/memes/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["memes"] }),
+    onSuccess: () => Promise.all([
+      qc.invalidateQueries({ queryKey: ["memes"] }),
+      qc.invalidateQueries({ queryKey: queryKeys.subscription }),
+    ]),
   });
 }

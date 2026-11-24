@@ -6,7 +6,6 @@ import { useEffect, useState } from "react";
 import {
   intervalToDuration,
   formatDuration,
-  parseISO,
 } from "date-fns";
 import { id } from "date-fns/locale";
 import { Button } from "@/components/ui/button";
@@ -30,19 +29,27 @@ export function SiteHeader() {
   const logout = useLogout();
   const user = me.data;
   const sub = useSubscriptionStatus();
+  const expiresAt = sub.data?.subscribed && sub.data.endsAt
+    ? Date.parse(sub.data.endsAt)
+    : null;
 
-  // Countdown masa aktif: tick tiap detik agar sisa waktu selalu berjalan.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
+    if (expiresAt === null) return;
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
-  }, []);
+  }, [expiresAt]);
 
-  const sisaWaktu = sub.data?.subscribed && sub.data.endsAt
+  const expired = expiresAt !== null && now >= expiresAt + 1000;
+  const { refetch } = sub;
+  useEffect(() => {
+    if (expired) void refetch();
+  }, [expired, refetch]);
+
+  const sisaWaktu = expiresAt !== null
     ? (() => {
-        const ends = parseISO(sub.data.endsAt).getTime();
-        if (ends <= now) return "habis";
-        const dur = intervalToDuration({ start: now, end: ends });
+        if (expiresAt <= now) return "habis";
+        const dur = intervalToDuration({ start: now, end: expiresAt });
         const teks = formatDuration(dur, {
           locale: id,
           format: ["days", "hours", "minutes", "seconds"],

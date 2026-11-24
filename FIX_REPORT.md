@@ -23,3 +23,11 @@
 **Perbaikan.** Gunakan helper penghapusan cookie yang memakai path yang sama dengan saat pemasangan. Cookie menjadi `HttpOnly`. Halaman login dan daftar memakai hasil `/auth/me`. Klien menunggu refresh yang sedang berjalan sebelum meminta logout dan menggabungkan refresh yang berlangsung serentak.
 
 **Bukti.** `TestClearAuthCookiesRemovesSessionAtRoot` memasang kedua cookie pada penyimpanan cookie standar, lalu menerapkan header logout. Sebelum patch, kedua cookie tertinggal. Setelah patch, penyimpanan kosong dan cookie login memiliki atribut `HttpOnly`.
+
+## TKT-104 · Navbar dan kuota menampilkan status lama
+
+**Akar masalah.** TanStack Query menganggap status segar selamanya. Masuk kembali ke halaman atau kembali ke tab dapat mempertahankan status lama. Perubahan jumlah meme tidak memperbarui data kuota. Cache HTTP pada TKT-102 juga bisa menyajikan status lama kepada permintaan ulang setelah pembayaran.
+
+**Perbaikan.** Navbar dan halaman Paket memakai status yang sama dengan kunci cache per akun. Status dibaca ulang ketika layar dibuka, tab kembali aktif, masa berlaku habis, atau mutasi mengubah status maupun kuota. Konfirmasi pembayaran menunggu invalidasi status sebelum menampilkan hasil.
+
+**Bukti.** `bun test` membuka observer dengan data status lama. Sebelum patch, observer diam (`idle`). Setelah patch, observer meminta status terbaru dan mendapatkan paket aktif.
