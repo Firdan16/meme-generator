@@ -2,6 +2,7 @@ package subscription
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -96,5 +97,8 @@ func (s *Service) Status(ctx context.Context, userID string) (SubscriptionStatus
 			MaxMemes:   plan.MaxMemes,
 		}, nil
 	}
-	return SubscriptionStatus{Subscribed: false, MemesUsed: 0, MaxMemes: 0}, nil
+	if errors.Is(err, ErrNotSubscribed) {
+		return SubscriptionStatus{}, nil
+	}
+	return SubscriptionStatus{}, err
 }
