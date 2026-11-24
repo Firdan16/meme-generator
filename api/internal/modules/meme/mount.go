@@ -10,9 +10,9 @@ import (
 )
 
 // NewModule menyusun modul meme; gate disuntikkan dari modul subscription.
-func NewModule(pool *pgxpool.Pool, s3Client *s3.Client, cfg config.StorageConfig, gate Gate) *Handler {
+func NewModule(pool *pgxpool.Pool, s3Client *s3.Client, cfg config.StorageConfig, gate Gate, secret string) *Handler {
 	repo := NewPostgresRepository(pool)
-	return NewHandler(NewService(repo, s3Client, cfg, gate))
+	return NewHandler(NewService(repo, s3Client, cfg, gate, secret))
 }
 
 func RegisterRoutes(mux *http.ServeMux, h *Handler, authMW func(http.Handler) http.Handler) {
@@ -21,5 +21,6 @@ func RegisterRoutes(mux *http.ServeMux, h *Handler, authMW func(http.Handler) ht
 	mux.Handle("POST /api/v1/memes/{id}/complete", authMW(http.HandlerFunc(h.Complete)))
 	mux.Handle("GET /api/v1/memes", authMW(http.HandlerFunc(h.List)))
 	mux.Handle("GET /api/v1/memes/{id}/images/{kind}", authMW(http.HandlerFunc(h.ViewImage)))
+	mux.HandleFunc("PUT /api/v1/memes/{id}/images/{kind}", h.UploadImage)
 	mux.Handle("DELETE /api/v1/memes/{id}", authMW(http.HandlerFunc(h.Delete)))
 }

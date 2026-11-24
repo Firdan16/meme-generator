@@ -55,3 +55,11 @@
 **Perbaikan.** Baca, ubah hasil, dan hapus kini dibatasi oleh ID meme serta akun dari sesi. Meme yang tidak tersedia untuk sesi mendapat 404. Studio mengambil gambar melalui API yang memeriksa pemilik dan membaca bucket Garage, yang tidak lagi mengekspos website publik. Baris lama tetap dapat dibaca dari kunci objek di balik URL yang disimpan sebelumnya. URL hasil ditentukan server.
 
 **Bukti.** `TestMemeOwnerCanReadUpdateAndDelete` memakai meme milik akun uji. Sebelum patch, pembacaan oleh pemilik gagal karena jumlah kolom berbeda. Setelah patch, baca, ubah, dan hapus meme milik sendiri berhasil. Pemeriksaan kode menunjukkan setiap query operasi per-meme wajib memakai `user_id`; pengujian memakai data lokal buatan.
+
+## TKT-108 · Objek non-gambar dan unggahan besar
+
+**Akar masalah.** Browser menerima URL tulis langsung ke Garage. API meneruskan tipe dari klien dan tidak memeriksa ukuran atau isi file. Alur ini berlaku juga untuk hasil render.
+
+**Perbaikan.** URL PUT kini mengarah ke API dengan izin bertanda tangan yang berlaku 15 menit, khusus untuk satu akun, satu meme, dan satu jenis gambar. API membatasi body unggahan hingga 10 MiB, termasuk ketika panjang tidak diketahui di awal. API memeriksa format dan dimensi dari isi file sebelum menulis ke Garage. Gambar dasar mendukung JPEG, PNG, GIF, dan WebP, maksimal 40 megapiksel. Hasil render wajib PNG dan harus ada di Garage sebelum meme bisa diselesaikan.
+
+**Bukti.** `TestPrepareImageReturnsValidationEndpoint` memakai PNG uji. Sebelum patch, URL PUT mengarah langsung ke storage. Setelah patch, URL mengarah ke API. `TestImageReaderValidatesFormatAndBodyLimit` menerima PNG valid serta menolak fixture teks biasa, header PNG terpotong, dan stream yang melebihi batas.

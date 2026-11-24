@@ -23,7 +23,8 @@ func NewHandler(service *Service) *Handler {
 type prepareUploadDTO struct {
 	Title       string `json:"title"`
 	Filename    string `json:"filename"`
-	ContentType string `json:"contentType"` // dikirim klien, dipakai mentah di presign
+	ContentType string `json:"contentType"`
+	Size        *int64 `json:"size"`
 }
 
 // PrepareUpload: user minta URL upload untuk gambar dasarnya.
@@ -38,14 +39,23 @@ func (h *Handler) PrepareUpload(w http.ResponseWriter, r *http.Request) {
 		response.Error(w, http.StatusBadRequest, response.CodeInvalidRequestBody, "invalid request body")
 		return
 	}
+	if dto.Size != nil {
+		if *dto.Size > maxUploadBytes {
+			writeError(w, ErrFileTooLarge)
+			return
+		}
+		if *dto.Size <= 0 {
+			writeError(w, ErrInvalidFile)
+			return
+		}
+	}
 	ext := path.Ext(dto.Filename)
 	res, err := h.service.PrepareUpload(r.Context(), userID, dto.Title, ext, dto.ContentType)
 	if err != nil {
 		writeError(w, err)
 		return
 	}
-	res.BaseURL = imageURL(r, res.ID, baseImage)
-	response.Success(w, http.StatusCreated, CodeUploadPrepared, res, "upload disiapkan")
+	response.Success(w, http.StatusCreated, CodeUploadPrepared, uploadResponse(r, res, baseImage), "upload disiapkan")
 }
 
 type completeDTO struct {
@@ -64,8 +74,7 @@ func (h *Handler) ResultUpload(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	res.BaseURL = imageURL(r, res.ID, resultImage)
-	response.Success(w, http.StatusOK, CodeUploadPrepared, res, "upload hasil disiapkan")
+	response.Success(w, http.StatusOK, CodeUploadPrepared, uploadResponse(r, res, resultImage), "upload hasil disiapkan")
 }
 
 // Complete finalizes the server-managed URL. The legacy payload remains accepted.
@@ -123,8 +132,14 @@ func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 
 func writeError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrFileTooLarge):
+		response.Error(w, http.StatusRequestEntityTooLarge, response.CodeUploadTooLarge, err.Error())
 	case errors.Is(err, ErrInvalidFile):
 		response.Error(w, http.StatusBadRequest, response.CodeInvalidImage, err.Error())
+	case errors.Is(err, ErrUploadGrant):
+		response.Error(w, http.StatusForbidden, response.CodeUnauthorized, err.Error())
+	case errors.Is(err, ErrUploadIncomplete):
+		response.Error(w, http.StatusConflict, response.CodeInvalidImage, err.Error())
 	case errors.Is(err, ErrNotFound):
 		response.Error(w, http.StatusNotFound, response.CodeMemeNotFound, err.Error())
 	case errors.Is(err, ErrNotSubscribedGate):

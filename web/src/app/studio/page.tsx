@@ -18,11 +18,11 @@ import {
 } from "@/lib/queries";
 
 // Alur render:
-// 1. prepare upload → presigned PUT untuk gambar dasar
-// 2. PUT gambar dasar langsung ke Garage (S3)
+// 1. Siapkan izin PUT untuk gambar dasar.
+// 2. API memvalidasi gambar dasar dan menyimpannya di Garage.
 // 3. render canvas: gambar dasar + teks atas/bawah font Impact
-// 4. presign via result-upload → PUT hasil PNG
-// 5. complete → simpan URL hasil ke database
+// 4. Siapkan izin result-upload dan kirim PNG melalui API.
+// 5. Complete menghubungkan meme ke gambar hasil yang sudah diunggah.
 
 const FONT_STACK = "Impact, 'Arial Narrow Bold', sans-serif";
 
@@ -101,13 +101,16 @@ function drawMeme(
   }
 }
 
-async function putToS3(uploadUrl: string, blob: Blob) {
+async function uploadImage(uploadUrl: string, blob: Blob) {
   const res = await fetch(uploadUrl, {
     method: "PUT",
     body: blob,
-    headers: { "Content-Type": blob.type },
+    headers: { "Content-Type": blob.type || "application/octet-stream" },
   });
-  if (!res.ok) throw new Error(`upload ke S3 gagal: ${res.status}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => null);
+    throw new Error(error?.message ?? `Unggah gambar gagal (HTTP ${res.status})`);
+  }
 }
 
 interface ResultUploadData {
@@ -152,6 +155,10 @@ export default function StudioPage() {
       setError("Pilih gambar dasar dulu.");
       return;
     }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("Ukuran gambar maksimum 10 MiB.");
+      return;
+    }
     setBusy(true);
     try {
       // Pastikan fallback font (Anton) sudah termuat sebelum dirender ke canvas.
@@ -164,10 +171,10 @@ export default function StudioPage() {
       });
       imgRef.current = img;
 
-      // 1) presign gambar dasar
-      const prepared = await prepare.mutateAsync({ title, filename: file.name });
-      // 2) unggah gambar dasar ke Garage
-      await putToS3(prepared.uploadUrl, file);
+      const prepared = await prepare.mutateAsync({
+        title, filename: file.name, contentType: file.type, size: file.size,
+      });
+      await uploadImage(prepared.uploadUrl, file);
 
       // 3) render hasil ke PNG
       const resultCanvas = document.createElement("canvas");
@@ -179,11 +186,11 @@ export default function StudioPage() {
         ),
       );
 
-      // 4) presign + unggah hasil
+      // 4) Siapkan izin dan unggah hasil.
       const result = unwrap<ResultUploadData>(
         await api.post(`/api/v1/memes/${prepared.id}/result-upload`),
       );
-      await putToS3(result.uploadUrl, blob);
+      await uploadImage(result.uploadUrl, blob);
 
       // 5) complete
       await complete.mutateAsync({ id: prepared.id, resultUrl: result.baseUrl });
@@ -288,7 +295,7 @@ export default function StudioPage() {
               <Input
                 id="image"
                 type="file"
-                accept="image/*"
+                accept="image/jpeg,image/png,image/gif,image/webp"
                 ref={fileRef}
                 onChange={() => {
                   const file = fileRef.current?.files?.[0];
