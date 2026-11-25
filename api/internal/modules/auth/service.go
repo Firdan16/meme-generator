@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"fmt"
+	"runtime"
 	"strings"
 
 	"golang.org/x/crypto/argon2"
@@ -14,12 +15,18 @@ import (
 
 // Service logika bisnis auth.
 type Service struct {
-	users  *Repository
-	tokens *token.Manager
+	users           *Repository
+	tokens          *token.Manager
+	passwordWorkers chan struct{}
 }
 
 func NewService(users *Repository, tokens *token.Manager) *Service {
-	return &Service{users: users, tokens: tokens}
+	return &Service{
+		users:  users,
+		tokens: tokens,
+		// Legacy Argon2id hashes can allocate 64 MiB per verification.
+		passwordWorkers: make(chan struct{}, min(runtime.GOMAXPROCS(0), 4)),
+	}
 }
 
 func (s *Service) Register(ctx context.Context, dto RegisterDTO) (AuthResponse, error) {
@@ -27,7 +34,7 @@ func (s *Service) Register(ctx context.Context, dto RegisterDTO) (AuthResponse, 
 	if err == nil && existing.ID != "" {
 		return AuthResponse{}, ErrEmailTaken
 	}
-	hash, err := HashPassword(dto.Password)
+	hash, err := s.hashPassword(ctx, dto.Password)
 	if err != nil {
 		return AuthResponse{}, fmt.Errorf("auth service: hash gagal: %w", err)
 	}
@@ -43,7 +50,11 @@ func (s *Service) Login(ctx context.Context, dto LoginDTO) (AuthResponse, error)
 	if err != nil {
 		return AuthResponse{}, ErrInvalidCredential
 	}
-	if !VerifyPassword(user.PasswordHash, dto.Password) {
+	valid, err := s.verifyPassword(ctx, user.PasswordHash, dto.Password)
+	if err != nil {
+		return AuthResponse{}, err
+	}
+	if !valid {
 		return AuthResponse{}, ErrInvalidCredential
 	}
 	return s.issue(ctx, user)
@@ -92,13 +103,43 @@ func toDTO(u User) UserDTO {
 	return UserDTO{ID: u.ID, Email: u.Email, Name: u.Name, Role: u.Role}
 }
 
+func (s *Service) hashPassword(ctx context.Context, password string) (string, error) {
+	if err := s.acquirePasswordWorker(ctx); err != nil {
+		return "", err
+	}
+	defer func() { <-s.passwordWorkers }()
+	return HashPassword(password)
+}
+
+func (s *Service) verifyPassword(ctx context.Context, encoded, password string) (bool, error) {
+	if err := s.acquirePasswordWorker(ctx); err != nil {
+		return false, err
+	}
+	defer func() { <-s.passwordWorkers }()
+	return VerifyPassword(encoded, password), nil
+}
+
+func (s *Service) acquirePasswordWorker(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case s.passwordWorkers <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			<-s.passwordWorkers
+			return err
+		}
+		return nil
+	}
+}
+
 // HashPassword memakai argon2id (format PHC string disederhanakan).
 func HashPassword(password string) (string, error) {
 	salt := []byte(token.RandomHex(16))
+	// OWASP Argon2id baseline, calibrated for concurrent logins on one CPU.
 	const (
-		timeCost = 1
-		memory   = 64 * 1024
-		threads  = 4
+		timeCost = 2
+		memory   = 19 * 1024
+		threads  = 1
 		keyLen   = 32
 	)
 	key := argon2.IDKey([]byte(password), salt, timeCost, memory, uint8(threads), keyLen)

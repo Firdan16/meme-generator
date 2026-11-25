@@ -78,6 +78,14 @@ Paket berhenti saat masa aktif habis, status dan kuota mengikuti penggunaan, dan
 
 **Bukti.** Sebelum patch, `TestStatusUsesActualSubscriptionStartForQuota` menghitung 2 padahal hanya 1 meme dibuat dalam periode aktif, dan `TestLastReservedSlotCanRequestResultUpload` mendapat 403. Sesudah patch keduanya lulus. `TestConcurrentReservationsRespectThePlanLimit` dijalankan 10 kali dengan race detector. Dalam setiap putaran, paket 10 slot menerima dan menyimpan tepat 10 dari 14 permintaan serentak. Di browser, slot kesepuluh menghasilkan PNG yang tampil di Studio, lalu halaman Paket menampilkan 10/10.
 
+## Performa POST /auth/login
+
+**Akar masalah.** Checker awal melaporkan p95 1.567 ms dengan satu query per permintaan. Lookup akun menggunakan indeks email. Pada uji dengan API dan database yang sama, mengganti parameter pada hash uji mengubah waktu respons secara signifikan. Profil awal Argon2id membutuhkan 64 MiB per verifikasi dengan empat jalur. Saat beberapa verifikasi berjalan bersamaan, penggunaan memori dan CPU bertambah. Proses API awal sempat kehabisan memori di kontainer uji 768 MiB.
+
+**Perbaikan.** Hash akun baru memakai Argon2id dengan 19 MiB, dua putaran, dan satu jalur. Pendaftaran dan login berbagi slot sesuai batas paralelisme Go, maksimal empat per proses API. Slot dilepas segera setelah hashing agar operasi database dan Redis tidak menahan antrean. Permintaan yang kedaluwarsa berhenti menunggu slot. Verifikasi membaca parameter yang tersimpan bersama hash, sehingga kata sandi akun lama tetap berlaku. [Panduan penyimpanan kata sandi OWASP](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#argon2id)
+
+**Bukti.** Uji HTTP memakai PostgreSQL dan Redis asli pada Linux dengan kuota 1 vCPU, RAM 768 MiB, dan batas memori lunak Go 620 MiB untuk pengukuran sebelum dan sesudah. Panaskan koneksi, kirim 48 login valid dari delapan klien paralel, lalu ambil durasi ke-46 setelah diurutkan sebagai p95. Hash awal mencatat p95 659 ms. Hash akun baru sesudah revisi mencatat 287–311 ms dalam tiga putaran, serta 400 ms pada uji tambahan dengan 12 klien paralel. Akun lama masih dapat login dan mencatat p95 511 ms pada satu putaran delapan klien. Uji HTTP juga memeriksa penolakan kata sandi salah untuk kedua profil serta pencabutan refresh token saat logout.
+
 ## Verifikasi lokal
 
 Jalankan dari checkout ini dengan PostgreSQL, Redis, dan Garage sesuai README. Terapkan migrasi sebelum menjalankan tes integrasi. Pakai database kosong khusus pengujian. Tes menambah dan menghapus akun uji.
@@ -105,6 +113,7 @@ Bagian **Bukti** di tiap tiket merekam hasil yang diamati sebelum dan sesudah pe
 | TKT-107 | Pemilik dapat membaca, memperbarui, dan menghapus meme sendiri | `go test ./internal/modules/meme -run TestMemeOwnerCanReadUpdateAndDelete -count=1` |
 | TKT-108 | Rute unggah, format gambar, ukuran, dan operasi pemilik | `go test ./internal/modules/meme -count=1` |
 | TKT-109 | Periode yang dihitung, render slot terakhir, dan permintaan serentak | `go test -race ./internal/server/v1 -count=1` dan `go test ./internal/modules/subscription -run TestStatusUsesActualSubscriptionStartForQuota -count=1` |
+| Performa login | Profil hash baru, verifikasi akun lama, dan pembatalan saat antrean penuh | `go test ./internal/modules/auth -count=1` |
 
 ### Coba alur utama di browser
 
@@ -114,7 +123,7 @@ Bagian **Bukti** di tiap tiket merekam hasil yang diamati sebelum dan sesudah pe
 
 ### Hasil pengujian
 
-- Uji Go dengan race detector, pemeriksaan Go, tes Bun, TypeScript, lint, dan build produksi Next.js lulus pada pengujian lokal.
+- Pada revisi, 17 tes Go dengan race detector dan satu tes Bun lulus. Pemeriksaan Go, TypeScript, lint, dan build produksi juga lulus.
 - Upgrade dari skema versi 5 ke 6 mempertahankan pemetaan kunci dari tagihan yang sudah tersimpan.
-- Browser dengan PostgreSQL, Redis, dan Garage menjalankan pendaftaran, checkout simulasi, tampilan error pembayaran, pembaruan paket di navbar, render canvas, penyimpanan PNG, tampilan gambar, logout, dan login ulang. Aplikasi melaporkan status baru tanpa hard refresh pada alur pembayaran dan render.
-- Pemeriksaan portal penilai belum dijalankan. Bukti pada laporan ini berasal dari kode, tes, dan data buatan di lingkungan lokal.
+- Uji browser awal dengan PostgreSQL, Redis, dan Garage menjalankan pendaftaran, checkout simulasi, tampilan error pembayaran, pembaruan paket di navbar, render canvas, penyimpanan PNG, tampilan gambar, logout, dan login ulang. Uji HTTP revisi mengulang checkout serentak, konfirmasi sukses dan gagal, perubahan status, login, dan logout.
+- Checker resmi sebelum revisi melaporkan 8 dari 9 kasus lulus. Hasil checker untuk revisi menunggu pengiriman ulang.
