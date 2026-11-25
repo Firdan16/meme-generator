@@ -38,7 +38,7 @@ func (s *Service) Checkout(ctx context.Context, userID string, dto CheckoutDTO, 
 
 		res, err = pendingCheckout(ctx, tx, userID, plan.ID)
 		if errors.Is(err, pgx.ErrNoRows) {
-			res, err = createCheckout(ctx, tx, userID, plan, token.RandomHex(12))
+			res, err = createCheckout(ctx, tx, userID, plan, token.RandomHex(12), key)
 			if err == nil {
 				res.MockGatewayURL, err = s.gateway.CreateCharge(ctx, res.Payment.AmountIDR, res.Payment.Reference)
 			}

@@ -66,7 +66,7 @@ func pendingCheckout(ctx context.Context, tx pgx.Tx, userID, planID string) (Che
 	return res, err
 }
 
-func createCheckout(ctx context.Context, tx pgx.Tx, userID string, p Plan, reference string) (CheckoutResponse, error) {
+func createCheckout(ctx context.Context, tx pgx.Tx, userID string, p Plan, reference, key string) (CheckoutResponse, error) {
 	var res CheckoutResponse
 	sub := &res.Subscription
 	err := tx.QueryRow(ctx, `
@@ -79,9 +79,9 @@ func createCheckout(ctx context.Context, tx pgx.Tx, userID string, p Plan, refer
 	}
 	pay := &res.Payment
 	err = tx.QueryRow(ctx, `
-		INSERT INTO payments (subscription_id, amount_idr, status, reference)
-		VALUES ($1, $2, 'pending', $3)
-		RETURNING id, subscription_id, amount_idr, status, reference`, sub.ID, p.PriceIDR, reference,
+		INSERT INTO payments (subscription_id, amount_idr, status, reference, idempotency_key)
+		VALUES ($1, $2, 'pending', $3, $4)
+		RETURNING id, subscription_id, amount_idr, status, reference`, sub.ID, p.PriceIDR, reference, key,
 	).Scan(&pay.ID, &pay.SubscriptionID, &pay.AmountIDR, &pay.Status, &pay.Reference)
 	if err != nil {
 		return CheckoutResponse{}, fmt.Errorf("create payment: %w", err)

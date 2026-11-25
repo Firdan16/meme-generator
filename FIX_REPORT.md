@@ -42,6 +42,10 @@ Paket berhenti saat masa aktif habis, status dan kuota mengikuti penggunaan, dan
 
 **Bukti.** `TestCheckoutReusesPendingPaymentAcrossRequests` mengirim satu checkout dan delapan percobaan ulang dari akun uji. Sebelum patch ada sembilan tagihan. Setelah patch semua panggilan memakai tagihan yang sama, termasuk percobaan ulang setelah pembayaran. `TestCheckoutKeysAreScopedToAccountAndPlan` dan `TestCheckoutPreflightAllowsIdempotencyKey` memeriksa batas akun, konflik paket, dan izin header. Browser sebelum patch menolak checkout pada preflight karena header tersebut.
 
+**Revisi setelah penilaian.** Checker awal melaporkan 0 pembayaran untuk kunci yang diminta. Pengujian ulang menemukan satu pembayaran, tetapi kuncinya hanya tercatat di `checkout_requests` dan kolom `payments.idempotency_key` kosong. Pembuatan pembayaran kini menyimpan kunci awal langsung pada baris pembayaran dalam transaksi yang sama. Pemetaan percobaan ulang tetap unik per akun. Migrasi 7 memulihkan kolom kosong dari pemetaan yang ada. Untuk pembayaran lama dengan beberapa kunci, migrasi memilih satu kunci secara deterministik karena tabel pemetaan belum memiliki waktu pencatatan. Semua kunci tersebut tetap dapat dipakai untuk mengulang permintaan.
+
+**Bukti revisi.** `TestCheckoutStoresOnePaymentForConcurrentReplays` mengirim delapan permintaan serentak dengan kunci yang sama pada akun baru. Sebelum revisi, ada 1 pembayaran dan 0 baris dengan kunci tersebut. Sesudah revisi, semua respons memakai ID pembayaran yang sama dan ada tepat 1 baris dengan kunci asli. Tes juga mencakup kunci yang sama pada dua akun, percobaan ulang dengan kunci lain, dan konfirmasi pembayaran ulang. Migrasi 6 → 7 dan rollback 7 → 6 → 7 mempertahankan pemetaan percobaan ulang.
+
 ## TKT-106 · Pembayaran gagal tanpa umpan balik
 
 **Akar masalah.** Halaman checkout menelan error dari API dan tombol tetap bisa ditekan selama permintaan berjalan. API juga menolak konfirmasi yang sebelumnya sudah berhasil sehingga respons pertama yang hilang terlihat seperti pembayaran gagal.
@@ -96,7 +100,7 @@ Bagian **Bukti** di tiap tiket merekam hasil yang diamati sebelum dan sesudah pe
 | TKT-102 | Status akun dan respons guest diberi aturan cache yang sama | `go test ./internal/modules/subscription -run TestSubscriptionStatusIsNotCacheable -count=1` |
 | TKT-103 | Logout menghapus kedua cookie sesi | `go test ./internal/modules/auth -run TestClearAuthCookiesRemovesSessionAtRoot -count=1` |
 | TKT-104 | Status paket diperbarui saat layar dibuka kembali | `bun test tests/subscription-status.test.mjs` |
-| TKT-105 | Percobaan ulang checkout, cakupan kunci per akun dan paket, serta izin header browser | `go test ./internal/modules/subscription ./internal/middleware -run TestCheckout -count=1` |
+| TKT-105 | Delapan checkout serentak dengan kunci identik, kunci pada baris pembayaran, cakupan per akun dan paket, serta izin header browser | `go test -race ./internal/modules/subscription ./internal/middleware -run TestCheckout -count=1` |
 | TKT-106 | Konfirmasi ulang mengembalikan pembayaran dan masa aktif yang sama | `go test ./internal/modules/subscription -run TestMockPaymentConfirmationCanBeSafelyRetried -count=1` |
 | TKT-107 | Pemilik dapat membaca, memperbarui, dan menghapus meme sendiri | `go test ./internal/modules/meme -run TestMemeOwnerCanReadUpdateAndDelete -count=1` |
 | TKT-108 | Rute unggah, format gambar, ukuran, dan operasi pemilik | `go test ./internal/modules/meme -count=1` |

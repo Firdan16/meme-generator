@@ -8,14 +8,64 @@ import (
 	"github.com/nyxsr/meme-portal/api/internal/testutil"
 )
 
+func TestCheckoutStoresOnePaymentForConcurrentReplays(t *testing.T) {
+	pool := testutil.Postgres(t)
+	userID := testutil.User(t, pool)
+	ctx := t.Context()
+	service := NewService(NewPostgresRepository(pool), MockGateway{})
+	input := CheckoutDTO{PlanCode: "premium_1d"}
+	const key = "same-checkout-intent"
+	const requests = 8
+	type checkoutResult struct {
+		response CheckoutResponse
+		err      error
+	}
+	start := make(chan struct{})
+	results := make(chan checkoutResult, requests)
+
+	for range requests {
+		go func() {
+			<-start
+			response, err := service.Checkout(ctx, userID, input, key)
+			results <- checkoutResult{response, err}
+		}()
+	}
+	close(start)
+
+	var paymentID string
+	for range requests {
+		result := <-results
+		if result.err != nil {
+			t.Errorf("checkout failed: %v", result.err)
+			continue
+		}
+		if paymentID == "" {
+			paymentID = result.response.Payment.ID
+		}
+		if result.response.Payment.ID != paymentID {
+			t.Errorf("got payment %q, want %q", result.response.Payment.ID, paymentID)
+		}
+	}
+
+	var total, withKey int
+	err := pool.QueryRow(ctx, `
+		SELECT count(*), count(*) FILTER (WHERE p.idempotency_key = $2)
+		FROM payments p JOIN subscriptions s ON s.id = p.subscription_id
+		WHERE s.user_id = $1`, userID, key).Scan(&total, &withKey)
+	if err != nil || total != 1 || withKey != 1 {
+		t.Fatalf("saved payments: total=%d with requested key=%d, %v; want one of each", total, withKey, err)
+	}
+}
+
 func TestCheckoutReusesPendingPaymentAcrossRequests(t *testing.T) {
 	pool := testutil.Postgres(t)
 	userID := testutil.User(t, pool)
 	ctx := t.Context()
 	service := NewService(NewPostgresRepository(pool), MockGateway{})
 	input := CheckoutDTO{PlanCode: "premium_1d"}
+	const firstKey = "checkout-first"
 
-	first, err := service.Checkout(ctx, userID, input, "checkout-first")
+	first, err := service.Checkout(ctx, userID, input, firstKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,12 +88,13 @@ func TestCheckoutReusesPendingPaymentAcrossRequests(t *testing.T) {
 			t.Errorf("same pending checkout returned a different payment: %v", res.err)
 		}
 	}
-	var count int
+	var count, withFirstKey int
 	err = pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM payments p JOIN subscriptions s ON s.id = p.subscription_id
-		WHERE s.user_id = $1`, userID).Scan(&count)
-	if err != nil || count != 1 {
-		t.Fatalf("saved payment count = %d, %v; want one", count, err)
+		SELECT count(*), count(*) FILTER (WHERE p.idempotency_key = $2)
+		FROM payments p JOIN subscriptions s ON s.id = p.subscription_id
+		WHERE s.user_id = $1`, userID, firstKey).Scan(&count, &withFirstKey)
+	if err != nil || count != 1 || withFirstKey != 1 {
+		t.Fatalf("saved payments after alias replays: total=%d with original key=%d, %v; want one of each", count, withFirstKey, err)
 	}
 	if _, _, err := service.Confirm(ctx, first.Payment.Reference); err != nil {
 		t.Fatal(err)
